@@ -25,6 +25,23 @@ dependencies {
 	testImplementation libs.asm
 }
 
+// Workaround for a Paper dev-bundle publishing issue: Since MC 1.21.8, the dev-bundle declares
+// 'net.kyori:adventure-text-serializer-ansi' without a version, which fails dependency
+// resolution. Provide a version explicitly.
+def pinAdventureVersion = { configuration ->
+	configuration.resolutionStrategy.eachDependency { details ->
+		if (details.requested.group == 'net.kyori'
+				&& details.requested.name == 'adventure-text-serializer-ansi'
+				&& (details.requested.version == null || details.requested.version.isEmpty())) {
+			details.useVersion '4.23.0'
+		}
+	}
+}
+pinAdventureVersion(configurations.compileClasspath)
+pinAdventureVersion(configurations.runtimeClasspath)
+pinAdventureVersion(configurations.testCompileClasspath)
+pinAdventureVersion(configurations.testRuntimeClasspath)
+
 // Note: We use Mojang mappings instead of Spigot mappings on Paper: Mojang mappings are usually
 // supported quicker and support for Spigot might be pending removal.
 // Dist module: Using the Mojang mappings requires adding a manifest attribute to the final jar.
