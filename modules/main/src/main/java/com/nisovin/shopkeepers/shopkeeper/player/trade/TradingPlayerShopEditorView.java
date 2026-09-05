@@ -2,7 +2,6 @@ package com.nisovin.shopkeepers.shopkeeper.player.trade;
 
 import java.util.Set;
 
-import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
@@ -19,6 +18,7 @@ import com.nisovin.shopkeepers.shopkeeper.player.PlaceholderItems;
 import com.nisovin.shopkeepers.shopkeeper.player.PlayerShopEditorView;
 import com.nisovin.shopkeepers.ui.UIHelpers;
 import com.nisovin.shopkeepers.ui.lib.UIState;
+import com.nisovin.shopkeepers.util.bukkit.SchedulerUtils;
 import com.nisovin.shopkeepers.util.inventory.InventoryViewUtils;
 import com.nisovin.shopkeepers.util.inventory.ItemUtils;
 
@@ -94,7 +94,7 @@ public class TradingPlayerShopEditorView extends PlayerShopEditorView {
 		cursorClone.setAmount(1);
 		// Replace placeholder item, if this is one:
 		ItemStack cursorFinal = PlaceholderItems.replace(cursorClone);
-		Bukkit.getScheduler().runTask(ShopkeepersPlugin.getInstance(), () -> {
+		SchedulerUtils.runTaskOrOmit(ShopkeepersPlugin.getInstance(), view.getPlayer(), () -> {
 			if (view.getPlayer().getOpenInventory() != view) return;
 
 			Inventory inventory = view.getTopInventory();

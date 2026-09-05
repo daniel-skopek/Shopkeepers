@@ -1,6 +1,7 @@
 package com.nisovin.shopkeepers.world;
 
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -13,6 +14,7 @@ import org.bukkit.event.entity.EntityTeleportEvent;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
 import com.nisovin.shopkeepers.SKShopkeepersPlugin;
+import com.nisovin.shopkeepers.util.bukkit.SchedulerUtils;
 import com.nisovin.shopkeepers.util.logging.Log;
 
 /**
@@ -82,11 +84,36 @@ public class ForcingEntityTeleporter implements Listener {
 		this.nextTeleportEntityUuid = entity.getUniqueId();
 		this.toLocation = toLocation;
 
-		boolean result = entity.teleport(toLocation);
+		@Nullable CompletableFuture<Boolean> future = SchedulerUtils.teleportAsync(entity, toLocation);
+		if (future == null) {
+			// The teleport could not be scheduled.
+			this.resetForcedEntityTeleport();
+			return false;
+		}
 
-		// This reset is required if the teleport did not actually trigger an event (e.g. on Spigot
-		// instead of Paper servers):
-		this.resetForcedEntityTeleport();
+		// Perform the post-processing once the teleport has completed. For synchronous teleports
+		// (on servers without the Folia scheduler API), this runs immediately.
+		future.whenComplete((result, exception) -> {
+			if (exception != null) {
+				Log.debug(() -> "Forcing entity teleport failed: " + exception.getMessage());
+			}
+			// This reset is required if the teleport did not actually trigger an event (e.g. on
+			// Spigot instead of Paper servers):
+			this.resetForcedEntityTeleport();
+			this.postTeleport(entity);
+		});
+
+		// For synchronous teleports, the future is already complete and we can return the result.
+		// For asynchronous teleports, we optimistically assume success, since the result is only
+		// available asynchronously.
+		if (future.isDone()) {
+			return Boolean.TRUE.equals(future.getNow(Boolean.FALSE));
+		}
+		return true;
+	}
+
+	private void postTeleport(Entity entity) {
+		if (!entity.isValid()) return;
 
 		// MC-44654: For some entities (e.g. end crystals), the server does not automatically send
 		// an update packet to the client when their position changes. We force the client-side
@@ -94,8 +121,6 @@ public class ForcingEntityTeleporter implements Listener {
 		var customNameVisible = entity.isCustomNameVisible();
 		entity.setCustomNameVisible(!customNameVisible);
 		entity.setCustomNameVisible(customNameVisible);
-
-		return result;
 	}
 
 	/**

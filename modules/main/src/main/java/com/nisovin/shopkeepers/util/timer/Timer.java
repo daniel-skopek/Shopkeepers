@@ -98,6 +98,26 @@ public class Timer implements Timings {
 		maxTimeNanos = 0L;
 	}
 
+	/**
+	 * Adds a separate, already measured timing entry.
+	 * <p>
+	 * This is thread-safe and can for example be used to record the durations of individual work
+	 * units that are processed concurrently.
+	 * 
+	 * @param elapsedNanos
+	 *            the elapsed duration in nanoseconds, not negative
+	 */
+	public synchronized void addTime(long elapsedNanos) {
+		if (elapsedNanos < 0) {
+			elapsedNanos = 0L;
+		}
+		counter++;
+		totalTimeNanos += elapsedNanos;
+		if (elapsedNanos > maxTimeNanos) {
+			maxTimeNanos = elapsedNanos;
+		}
+	}
+
 	@Override
 	public long getCounter() {
 		return counter;

@@ -18,7 +18,6 @@ import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
-import org.bukkit.scheduler.BukkitTask;
 import org.checkerframework.checker.nullness.qual.NonNull;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
@@ -36,6 +35,7 @@ import com.nisovin.shopkeepers.shopkeeper.registry.SKShopkeeperRegistry;
 import com.nisovin.shopkeepers.storage.migration.RawDataMigrations;
 import com.nisovin.shopkeepers.util.bukkit.PermissionUtils;
 import com.nisovin.shopkeepers.util.bukkit.PluginUtils;
+import com.nisovin.shopkeepers.util.bukkit.ScheduledTask;
 import com.nisovin.shopkeepers.util.bukkit.SchedulerUtils;
 import com.nisovin.shopkeepers.util.bukkit.SingletonTask;
 import com.nisovin.shopkeepers.util.data.container.DataContainer;
@@ -133,7 +133,7 @@ public class SKShopkeeperStorage implements ShopkeeperStorage {
 	// loading the shopkeeper data, so that the save file doesn't get overwritten by any subsequent
 	// save requests.
 	private boolean savingDisabled = false;
-	private @Nullable BukkitTask delayedSaveTask = null;
+	private @Nullable ScheduledTask delayedSaveTask = null;
 
 	public SKShopkeeperStorage(SKShopkeepersPlugin plugin) {
 		DataVersion.init();
@@ -201,7 +201,7 @@ public class SKShopkeeperStorage implements ShopkeeperStorage {
 		private static final long PERIOD_TICKS = 6000L; // 5 minutes
 
 		void start() {
-			Bukkit.getScheduler().runTaskTimer(plugin, this, PERIOD_TICKS, PERIOD_TICKS);
+			SchedulerUtils.runTaskTimerOrOmit(plugin, this, PERIOD_TICKS, PERIOD_TICKS);
 		}
 
 		@Override

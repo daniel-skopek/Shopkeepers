@@ -66,7 +66,6 @@ public class Settings extends Config {
 	public static boolean debug = false;
 	// See DebugOptions for all available options.
 	public static List<String> debugOptions = new ArrayList<>(0);
-	public static boolean enableMetrics = true;
 
 	/*
 	 * Messages

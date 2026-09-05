@@ -330,9 +330,17 @@ public class MannequinShop extends SKLivingShopObject<LivingEntity> {
 				return;
 			}
 
-			SchedulerUtils.runOnMainThreadOrOmit(plugin, () -> {
-				this.updateProfile(player, preparedInput, updatedProfile);
-			});
+			// Update the profile on the mannequin's region (if the entity is still spawned):
+			LivingEntity entity = this.getEntity();
+			if (entity != null) {
+				SchedulerUtils.runTaskOrOmit(plugin, entity, () -> {
+					this.updateProfile(player, preparedInput, updatedProfile);
+				});
+			} else {
+				SchedulerUtils.runOnMainThreadOrOmit(plugin, () -> {
+					this.updateProfile(player, preparedInput, updatedProfile);
+				});
+			}
 		});
 	}
 

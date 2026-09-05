@@ -3,7 +3,6 @@ package com.nisovin.shopkeepers.commands.shopkeepers;
 import org.bukkit.ChatColor;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
-import org.bukkit.scheduler.BukkitRunnable;
 
 import com.nisovin.shopkeepers.SKShopkeepersPlugin;
 import com.nisovin.shopkeepers.api.ShopkeepersPlugin;
@@ -15,6 +14,8 @@ import com.nisovin.shopkeepers.commands.lib.commands.PlayerCommand;
 import com.nisovin.shopkeepers.commands.lib.context.CommandContextView;
 import com.nisovin.shopkeepers.text.Text;
 import com.nisovin.shopkeepers.util.bukkit.EntityUtils;
+import com.nisovin.shopkeepers.util.bukkit.ScheduledTask;
+import com.nisovin.shopkeepers.util.bukkit.SchedulerUtils;
 import com.nisovin.shopkeepers.util.bukkit.TextUtils;
 import com.nisovin.shopkeepers.util.bukkit.Ticks;
 
@@ -86,46 +87,43 @@ class CommandTestDamage extends PlayerCommand {
 				+ "&a, Per tick: &e" + timesPerTick + "&a, Duration &e" + durationTicks
 				+ " ticks &a..."));
 
-		new BukkitRunnable() {
-
-			private int tickCounter = 0;
-
-			@Override
-			public void run() {
-				boolean playerValid = player.isValid();
-				if (tickCounter >= durationTicks || !playerValid || !target.isValid()) {
-					// We are done:
-					if (playerValid) {
-						player.sendMessage(ChatColor.GREEN + "... Done");
-					}
-					this.cancel();
-					return;
+		ScheduledTask[] taskHolder = new ScheduledTask[1];
+		int[] tickCounter = new int[] { 0 };
+		Runnable task = () -> {
+			boolean playerValid = player.isValid();
+			if (tickCounter[0] >= durationTicks || !playerValid || !target.isValid()) {
+				// We are done:
+				if (playerValid) {
+					player.sendMessage(ChatColor.GREEN + "... Done");
 				}
+				taskHolder[0].cancel();
+				return;
+			}
 
-				// Apply damage:
-				for (int i = 0; i < timesPerTick; ++i) {
-					// Reset damage cooldown:
-					target.setNoDamageTicks(0);
-					target.setLastDamage(0.0D);
+			// Apply damage:
+			for (int i = 0; i < timesPerTick; ++i) {
+				// Reset damage cooldown:
+				target.setNoDamageTicks(0);
+				target.setLastDamage(0.0D);
 
-					// Damage:
-					target.damage(damage, player);
+				// Damage:
+				target.damage(damage, player);
 
-					// Abort if the entity died:
-					if (target.isDead()) {
-						break;
-					}
-				}
-
-				tickCounter += 1;
-
-				// Periodic progress feedback:
-				if ((tickCounter % 20) == 0) {
-					player.sendMessage(ChatColor.GRAY + "... (" + ChatColor.YELLOW + tickCounter
-							+ ChatColor.GRAY + " / " + ChatColor.YELLOW + durationTicks
-							+ ChatColor.GRAY + ")");
+				// Abort if the entity died:
+				if (target.isDead()) {
+					break;
 				}
 			}
-		}.runTaskTimer(plugin, 1L, 1L);
+
+			tickCounter[0] += 1;
+
+			// Periodic progress feedback:
+			if ((tickCounter[0] % 20) == 0) {
+				player.sendMessage(ChatColor.GRAY + "... (" + ChatColor.YELLOW + tickCounter[0]
+						+ ChatColor.GRAY + " / " + ChatColor.YELLOW + durationTicks
+						+ ChatColor.GRAY + ")");
+			}
+		};
+		taskHolder[0] = SchedulerUtils.runTaskTimerOrOmit(plugin, target, task, 1L, 1L);
 	}
 }

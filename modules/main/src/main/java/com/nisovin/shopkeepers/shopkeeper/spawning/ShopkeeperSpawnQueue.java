@@ -2,11 +2,15 @@ package com.nisovin.shopkeepers.shopkeeper.spawning;
 
 import java.util.function.Consumer;
 
+import org.bukkit.Bukkit;
+import org.bukkit.World;
 import org.bukkit.plugin.Plugin;
 
+import com.nisovin.shopkeepers.api.util.ChunkCoords;
 import com.nisovin.shopkeepers.shopkeeper.AbstractShopkeeper;
 import com.nisovin.shopkeepers.shopkeeper.spawning.ShopkeeperSpawnState.State;
 import com.nisovin.shopkeepers.shopobjects.AbstractShopObject;
+import com.nisovin.shopkeepers.util.bukkit.SchedulerUtils;
 import com.nisovin.shopkeepers.util.java.Validate;
 import com.nisovin.shopkeepers.util.taskqueue.TaskQueue;
 
@@ -30,11 +34,14 @@ public class ShopkeeperSpawnQueue extends TaskQueue<AbstractShopkeeper> {
 	// between 0.05-0.25ms, with an average of around 0.1ms.
 	private static final int SPAWNS_PER_EXECUTION = 6;
 
+	private final Plugin plugin;
 	private final Consumer<? super AbstractShopkeeper> spawner;
 
 	ShopkeeperSpawnQueue(Plugin plugin, Consumer<? super AbstractShopkeeper> spawner) {
 		super(plugin, SPAWN_TASK_PERIOD_TICKS, SPAWNS_PER_EXECUTION);
+		Validate.notNull(plugin, "plugin is null");
 		Validate.notNull(spawner, "spawner is null");
+		this.plugin = plugin;
 		this.spawner = spawner;
 	}
 
@@ -94,7 +101,19 @@ public class ShopkeeperSpawnQueue extends TaskQueue<AbstractShopkeeper> {
 		// Reset the shopkeeper's 'queued' state:
 		this.resetQueued(shopkeeper);
 
-		// Spawn the shopkeeper:
-		spawner.accept(shopkeeper);
+		// Spawn the shopkeeper on the shopkeeper's region:
+		ChunkCoords chunkCoords = shopkeeper.getLastChunkCoords();
+		World world = (chunkCoords != null) ? Bukkit.getWorld(chunkCoords.getWorldName()) : null;
+		if (chunkCoords != null && world != null) {
+			SchedulerUtils.runTaskOrOmit(
+					plugin,
+					world,
+					chunkCoords.getChunkX(),
+					chunkCoords.getChunkZ(),
+					() -> spawner.accept(shopkeeper)
+			);
+		} else {
+			spawner.accept(shopkeeper);
+		}
 	}
 }

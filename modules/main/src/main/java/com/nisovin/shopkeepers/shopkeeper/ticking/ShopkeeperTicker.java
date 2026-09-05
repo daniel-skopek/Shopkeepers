@@ -2,17 +2,18 @@ package com.nisovin.shopkeepers.shopkeeper.ticking;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
-import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.Bukkit;
+import org.bukkit.World;
 
 import com.nisovin.shopkeepers.SKShopkeepersPlugin;
+import com.nisovin.shopkeepers.api.util.ChunkCoords;
 import com.nisovin.shopkeepers.debug.DebugOptions;
 import com.nisovin.shopkeepers.shopkeeper.AbstractShopkeeper;
+import com.nisovin.shopkeepers.util.bukkit.SchedulerUtils;
 import com.nisovin.shopkeepers.util.java.CyclicCounter;
 import com.nisovin.shopkeepers.util.java.Validate;
 import com.nisovin.shopkeepers.util.logging.Log;
@@ -84,15 +85,11 @@ public class ShopkeeperTicker {
 	}
 
 	private final CyclicCounter activeTickingGroup = new CyclicCounter(TICKING_GROUPS);
-	private boolean currentlyTicking = false;
-	private boolean dirty;
 
-	// True: Ticking started, False: Ticking stopped
-	// Note: The start/stop-ticking callbacks for these pending changes have already been invoked
-	// and only the actual registration change is deferred, because if a shopkeeper changes its
-	// ticking state multiple times during the same tick we would otherwise lose the callbacks for
-	// the intermediate ticking state changes.
-	private final Map<AbstractShopkeeper, Boolean> pendingTickingChanges = new LinkedHashMap<>();
+	// Guards access to the ticking groups: The ticking groups are accessed from the server's main
+	// thread (or the global region thread on Folia) when ticking is triggered, and from the region
+	// threads of shopkeepers when their ticking is started or stopped.
+	private final Object tickingLock = new Object();
 
 	public ShopkeeperTicker(SKShopkeepersPlugin plugin) {
 		Validate.notNull(plugin, "plugin is null");
@@ -115,28 +112,18 @@ public class ShopkeeperTicker {
 		// Usually, there should be no need to clean up the registered ticking shopkeepers here,
 		// since shopkeepers should stop their ticking automatically once they are deactivated.
 		// However, if the plugin is shut down during shopkeeper ticking, we can end up with still
-		// pending registration changes.
-		if (currentlyTicking) {
-			// Reset:
-			currentlyTicking = false;
-			dirty = false;
-			tickingGroups.forEach(TickingGroup::clear);
-			pendingTickingChanges.clear();
-		} else {
-			this.ensureEmpty();
+		// registered ticking shopkeepers.
+		synchronized (tickingLock) {
+			this.ensureEmptyLocked();
 		}
 	}
 
-	private void ensureEmpty() {
+	private void ensureEmptyLocked() {
 		boolean anyNonEmptyTickingGroup = tickingGroups.stream()
 				.anyMatch(tickingGroup -> !tickingGroup.getShopkeepers().isEmpty());
 		if (anyNonEmptyTickingGroup) {
 			Log.warning("Some ticking shopkeepers were not properly unregistered!");
 			tickingGroups.forEach(TickingGroup::clear);
-		}
-		if (!pendingTickingChanges.isEmpty()) {
-			Log.warning("Unexpected pending shopkeeper ticking changes!");
-			pendingTickingChanges.clear();
 		}
 	}
 
@@ -161,12 +148,9 @@ public class ShopkeeperTicker {
 		if (shopkeeper.isTicking()) return; // Already ticking
 
 		Log.debug(DebugOptions.shopkeeperActivation, () -> shopkeeper.getLogPrefix()
-				+ "Ticking started." + (currentlyTicking ? " (Deferred registration)" : ""));
+				+ "Ticking started.");
 
-		if (currentlyTicking) {
-			// Defer registration until after ticking:
-			pendingTickingChanges.put(shopkeeper, true); // Replaces any previous value
-		} else {
+		synchronized (tickingLock) {
 			this.addShopkeeper(shopkeeper);
 		}
 
@@ -184,12 +168,9 @@ public class ShopkeeperTicker {
 		if (!shopkeeper.isTicking()) return; // Already not ticking
 
 		Log.debug(DebugOptions.shopkeeperActivation, () -> shopkeeper.getLogPrefix()
-				+ "Ticking stopped." + (currentlyTicking ? " (Deferred unregistration)" : ""));
+				+ "Ticking stopped.");
 
-		if (currentlyTicking) {
-			// Defer unregistration until after ticking:
-			pendingTickingChanges.put(shopkeeper, false); // Replaces any previous value
-		} else {
+		synchronized (tickingLock) {
 			this.removeShopkeeper(shopkeeper);
 		}
 
@@ -218,52 +199,49 @@ public class ShopkeeperTicker {
 	// TICKING
 
 	private void startShopkeeperTickTask() {
-		new ShopkeeperTickTask().start();
+		SchedulerUtils.runTaskTimerOrOmit(plugin, this::tickShopkeepers, PERIOD, PERIOD);
 	}
 
-	private final class ShopkeeperTickTask extends BukkitRunnable {
-
-		private static final int PERIOD = TICKING_PERIOD_TICKS / TICKING_GROUPS;
-
-		void start() {
-			this.runTaskTimer(plugin, PERIOD, PERIOD);
-		}
-
-		@Override
-		public void run() {
-			tickShopkeepers();
-		}
-	}
+	private static final int PERIOD = TICKING_PERIOD_TICKS / TICKING_GROUPS;
 
 	private void tickShopkeepers() {
-		dirty = false;
-
-		currentlyTicking = true;
-		TickingGroup tickingGroup = this.getTickingGroup(activeTickingGroup.getValue());
-		tickingGroup.getShopkeepers().forEach(this::tickShopkeeper);
-		currentlyTicking = false;
-
-		// Process pending shopkeeper ticking registration changes:
-		pendingTickingChanges.forEach((shopkeeper, isTicking) -> {
-			if (isTicking) {
-				this.addShopkeeper(shopkeeper);
-			} else {
-				this.removeShopkeeper(shopkeeper);
-			}
-		});
-		pendingTickingChanges.clear();
-
-		// Trigger a delayed save if any of the shopkeepers got marked as dirty or deleted during
-		// the ticking:
-		if (dirty) {
-			plugin.getShopkeeperStorage().saveDelayed();
+		// Copy the shopkeepers of the active ticking group:
+		List<AbstractShopkeeper> shopkeepers;
+		synchronized (tickingLock) {
+			TickingGroup tickingGroup = this.getTickingGroup(activeTickingGroup.getValue());
+			shopkeepers = new ArrayList<>(tickingGroup.getShopkeepers());
 		}
+
+		// Tick the shopkeepers:
+		shopkeepers.forEach(this::tickShopkeeper);
 
 		// Update the active ticking group:
 		activeTickingGroup.getAndIncrement();
 	}
 
 	private void tickShopkeeper(AbstractShopkeeper shopkeeper) {
+		assert shopkeeper != null;
+		// Skip if the shopkeeper is no longer ticking (e.g. if it got removed or deactivated while
+		// it was pending to be ticked):
+		if (!shopkeeper.isTicking()) return;
+
+		// On Folia, ticking has to happen on the shopkeeper's region:
+		ChunkCoords chunkCoords = shopkeeper.getLastChunkCoords();
+		World world = (chunkCoords != null) ? Bukkit.getWorld(chunkCoords.getWorldName()) : null;
+		if (SchedulerUtils.isFolia() && chunkCoords != null && world != null) {
+			SchedulerUtils.runTaskOrOmit(
+					plugin,
+					world,
+					chunkCoords.getChunkX(),
+					chunkCoords.getChunkZ(),
+					() -> this.doTickShopkeeper(shopkeeper)
+			);
+		} else {
+			this.doTickShopkeeper(shopkeeper);
+		}
+	}
+
+	private void doTickShopkeeper(AbstractShopkeeper shopkeeper) {
 		assert shopkeeper != null;
 		// Skip if the shopkeeper is no longer ticking (e.g. if it got removed or deactivated while
 		// it was pending to be ticked):
@@ -279,7 +257,7 @@ public class ShopkeeperTicker {
 		// If the shopkeeper was modified or deleted during the tick: Subsequently trigger a delayed
 		// save of the storage.
 		if (shopkeeper.isDirty() || !shopkeeper.isValid()) {
-			dirty = true;
+			plugin.getShopkeeperStorage().saveDelayed();
 		}
 	}
 }

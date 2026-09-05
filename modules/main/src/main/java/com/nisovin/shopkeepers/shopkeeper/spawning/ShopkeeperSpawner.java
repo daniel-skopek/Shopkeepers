@@ -25,6 +25,7 @@ import com.nisovin.shopkeepers.shopkeeper.registry.SKShopkeeperRegistry;
 import com.nisovin.shopkeepers.shopkeeper.spawning.ShopkeeperSpawnState.State;
 import com.nisovin.shopkeepers.shopobjects.AbstractShopObject;
 import com.nisovin.shopkeepers.shopobjects.AbstractShopObjectType;
+import com.nisovin.shopkeepers.util.bukkit.SchedulerUtils;
 import com.nisovin.shopkeepers.util.bukkit.TextUtils;
 import com.nisovin.shopkeepers.util.java.Validate;
 import com.nisovin.shopkeepers.util.logging.Log;
@@ -96,7 +97,7 @@ public class ShopkeeperSpawner {
 
 		Bukkit.getPluginManager().registerEvents(listener, plugin);
 
-		Bukkit.getScheduler().runTaskLater(plugin, new CheckUnspawnableShopkeepersTask(), 5L);
+		SchedulerUtils.runTaskLaterOrOmit(plugin, new CheckUnspawnableShopkeepersTask(), 5L);
 	}
 
 	private class CheckUnspawnableShopkeepersTask implements Runnable {

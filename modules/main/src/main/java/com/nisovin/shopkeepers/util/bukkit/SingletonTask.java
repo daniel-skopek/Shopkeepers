@@ -1,10 +1,9 @@
 package com.nisovin.shopkeepers.util.bukkit;
 
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
-import org.bukkit.Bukkit;
 import org.bukkit.plugin.Plugin;
-import org.bukkit.scheduler.BukkitTask;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
 import com.nisovin.shopkeepers.api.internal.util.Unsafe;
@@ -65,8 +64,8 @@ public abstract class SingletonTask {
 	private final Object executionLock = new Object();
 
 	private State state = State.NOT_RUNNING;
-	// The Bukkit task asynchronously executing this task. Only relevant for async executions.
-	private @Nullable BukkitTask asyncTask = null;
+	// The scheduled task asynchronously executing this task. Only relevant for async executions.
+	private @Nullable ScheduledTask asyncTask = null;
 	// The (internal) callbacks of the current execution:
 	// Run immediately, possibly asynchronously:
 	private @Nullable Runnable internalCallback = null;
@@ -101,7 +100,7 @@ public abstract class SingletonTask {
 	 * @return <code>true</code> if an execution is in progress
 	 */
 	public final boolean isRunning() {
-		assert Bukkit.isPrimaryThread();
+		assert SchedulerUtils.isMainThread();
 		return (state != State.NOT_RUNNING);
 	}
 
@@ -111,7 +110,7 @@ public abstract class SingletonTask {
 	 * @return <code>true</code> if there is an execution that is currently being post-processed
 	 */
 	public final boolean isPostProcessing() {
-		assert Bukkit.isPrimaryThread();
+		assert SchedulerUtils.isMainThread();
 		return (state == State.SYNC_CALLBACK);
 	}
 
@@ -126,14 +125,14 @@ public abstract class SingletonTask {
 	}
 
 	private boolean isWithinSyncExecution() {
-		assert Bukkit.isPrimaryThread();
+		assert SchedulerUtils.isMainThread();
 		return (state == State.PREPARING)
 				|| (asyncTask == null && state == State.EXECUTING)
 				|| (state == State.SYNC_CALLBACK);
 	}
 
 	private void validateMainThreadAndNotWithinExecution() {
-		Validate.State.isTrue(Bukkit.isPrimaryThread(),
+		Validate.State.isTrue(SchedulerUtils.isMainThread(),
 				"This operation has to be called from the main thread!");
 		if (this.isWithinSyncExecution()) {
 			throw Validate.State.error(
@@ -363,6 +362,11 @@ public abstract class SingletonTask {
 			// Tricky, since in general there is no guarantee about the order in which the task and
 			// any following instructions are executed.
 			this.asyncTask = this.createInternalAsyncTask().runTaskAsynchronously();
+			if (this.asyncTask == null) {
+				// The async task could not be scheduled (e.g. because the plugin got disabled just
+				// now). Execute it synchronously instead.
+				this.executeTask(null);
+			}
 		} else {
 			// Synchronous execution:
 			this.executeTask(null);
@@ -375,20 +379,17 @@ public abstract class SingletonTask {
 	 * custom distinct type that derives from this type. The behavior of this task cannot be changed
 	 * by subclasses.
 	 */
-	public abstract class InternalAsyncTask implements Runnable {
-
-		private @Nullable BukkitTask task; // Captured Bukkit task
+	public abstract class InternalAsyncTask implements Consumer<ScheduledTask> {
 
 		protected InternalAsyncTask() {
 		}
 
-		private BukkitTask runTaskAsynchronously() {
-			this.task = Bukkit.getScheduler().runTaskAsynchronously(plugin, this);
-			return task;
+		private @Nullable ScheduledTask runTaskAsynchronously() {
+			return SchedulerUtils.runAsyncTaskOrOmit(plugin, this);
 		}
 
 		@Override
-		public final void run() {
+		public final void accept(ScheduledTask task) {
 			executeTask(task);
 		}
 	}
@@ -460,7 +461,7 @@ public abstract class SingletonTask {
 	// asyncTask: The async task executing this method. Null for sync executions.
 	// If the async task got cancelled and another execution has already been started, this may not
 	// match the current value of this class' asyncTask variable.
-	private void executeTask(@Nullable BukkitTask asyncTask) {
+	private void executeTask(@Nullable ScheduledTask asyncTask) {
 		if (asyncTask != null) {
 			// Asynchronous execution:
 			// Requires the lock for coordination with the main thread, and might have been

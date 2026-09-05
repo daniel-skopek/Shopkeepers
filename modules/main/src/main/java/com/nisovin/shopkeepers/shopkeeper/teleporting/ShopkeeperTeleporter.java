@@ -1,5 +1,7 @@
 package com.nisovin.shopkeepers.shopkeeper.teleporting;
 
+import java.util.concurrent.CompletableFuture;
+
 import org.bukkit.Location;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
@@ -7,6 +9,7 @@ import org.checkerframework.checker.nullness.qual.Nullable;
 
 import com.nisovin.shopkeepers.api.shopkeeper.Shopkeeper;
 import com.nisovin.shopkeepers.lang.Messages;
+import com.nisovin.shopkeepers.util.bukkit.SchedulerUtils;
 import com.nisovin.shopkeepers.util.bukkit.TeleportHelper;
 import com.nisovin.shopkeepers.util.bukkit.TextUtils;
 
@@ -82,18 +85,36 @@ public final class ShopkeeperTeleporter {
 		teleportLocation.setDirection(shopkeeperLocation.toVector().subtract(teleportPlayerEyeLocationVector));
 		teleportLocation.setPitch(0);
 
-		if (!player.teleport(teleportLocation)) {
+		@Nullable CompletableFuture<Boolean> future = SchedulerUtils.teleportAsync(
+				player,
+				teleportLocation
+		);
+		if (future == null) {
+			// The teleport could not be scheduled.
 			if (sender != null) {
 				TextUtils.sendMessage(sender, Messages.teleportFailed);
 			}
 			return false;
 		}
 
-		if (sender != null) {
-			TextUtils.sendMessage(sender, Messages.teleportSuccess,
-					"player", TextUtils.getPlayerText(player),
-					"shop", TextUtils.getShopText(shopkeeper)
-			);
+		future.whenComplete((result, exception) -> {
+			if (exception != null || !Boolean.TRUE.equals(result)) {
+				if (sender != null) {
+					TextUtils.sendMessage(sender, Messages.teleportFailed);
+				}
+			} else if (sender != null) {
+				TextUtils.sendMessage(sender, Messages.teleportSuccess,
+						"player", TextUtils.getPlayerText(player),
+						"shop", TextUtils.getShopText(shopkeeper)
+				);
+			}
+		});
+
+		// For synchronous teleports, the future is already complete and we can return the result.
+		// For asynchronous teleports, we optimistically assume success, since the result is only
+		// available asynchronously.
+		if (future.isDone()) {
+			return Boolean.TRUE.equals(future.getNow(Boolean.FALSE));
 		}
 		return true;
 	}

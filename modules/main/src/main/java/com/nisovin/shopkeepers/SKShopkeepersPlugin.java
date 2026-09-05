@@ -41,7 +41,6 @@ import com.nisovin.shopkeepers.input.chat.ChatInput;
 import com.nisovin.shopkeepers.input.interaction.InteractionInput;
 import com.nisovin.shopkeepers.internals.SKApiInternals;
 import com.nisovin.shopkeepers.lang.Messages;
-import com.nisovin.shopkeepers.metrics.PluginMetrics;
 import com.nisovin.shopkeepers.moving.ShopkeeperMoving;
 import com.nisovin.shopkeepers.naming.ShopkeeperNaming;
 import com.nisovin.shopkeepers.playershops.PlayerShops;
@@ -184,8 +183,6 @@ public class SKShopkeepersPlugin extends JavaPlugin implements InternalShopkeepe
 			blockShops,
 			entityShops
 	);
-
-	private final PluginMetrics pluginMetrics = new PluginMetrics(Unsafe.initialized(this));
 
 	private boolean outdatedServer = false;
 	private boolean incompatibleServer = false;
@@ -467,9 +464,6 @@ public class SKShopkeepersPlugin extends JavaPlugin implements InternalShopkeepe
 		// Save all updated shopkeeper data (e.g. after data migrations):
 		shopkeeperStorage.saveIfDirty();
 
-		// Plugin metrics:
-		pluginMetrics.onEnable();
-
 		// Event debugger:
 		eventDebugger.onEnable();
 	}
@@ -549,9 +543,6 @@ public class SKShopkeepersPlugin extends JavaPlugin implements InternalShopkeepe
 		forcingEntityTeleporter.onDisable();
 		forcingEntitySpawner.onDisable();
 
-		// Plugin metrics:
-		pluginMetrics.onDisable();
-
 		// Event debugger:
 		eventDebugger.onDisable();
 
@@ -561,7 +552,7 @@ public class SKShopkeepersPlugin extends JavaPlugin implements InternalShopkeepe
 		}
 
 		HandlerList.unregisterAll(this);
-		Bukkit.getScheduler().cancelTasks(this);
+		SchedulerUtils.cancelTasks(this);
 
 		InternalShopkeepersAPI.disable();
 		plugin = null;

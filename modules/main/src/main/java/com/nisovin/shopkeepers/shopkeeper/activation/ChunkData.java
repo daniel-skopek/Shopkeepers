@@ -1,9 +1,9 @@
 package com.nisovin.shopkeepers.shopkeeper.activation;
 
-import org.bukkit.scheduler.BukkitTask;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
 import com.nisovin.shopkeepers.api.util.ChunkCoords;
+import com.nisovin.shopkeepers.util.bukkit.ScheduledTask;
 import com.nisovin.shopkeepers.util.java.Validate;
 
 final class ChunkData {
@@ -16,7 +16,7 @@ final class ChunkData {
 	private boolean active;
 	// TODO Use one task (or a small number of tasks) for all pending delayed chunk activations,
 	// instead of one task per chunk?
-	private @Nullable BukkitTask delayedActivationTask = null;
+	private @Nullable ScheduledTask delayedActivationTask = null;
 
 	ChunkData(ChunkCoords chunkCoords) {
 		Validate.notNull(chunkCoords, "chunkCoords is null");
@@ -50,7 +50,7 @@ final class ChunkData {
 		return (delayedActivationTask != null);
 	}
 
-	void setDelayedActivationTask(@Nullable BukkitTask delayedActivationTask) {
+	void setDelayedActivationTask(@Nullable ScheduledTask delayedActivationTask) {
 		this.delayedActivationTask = delayedActivationTask;
 	}
 

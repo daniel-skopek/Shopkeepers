@@ -26,6 +26,7 @@ import com.nisovin.shopkeepers.ui.lib.View;
 import com.nisovin.shopkeepers.ui.lib.ViewProvider;
 import com.nisovin.shopkeepers.util.annotations.ReadOnly;
 import com.nisovin.shopkeepers.util.annotations.ReadWrite;
+import com.nisovin.shopkeepers.util.bukkit.SchedulerUtils;
 import com.nisovin.shopkeepers.util.inventory.ChestLayout;
 import com.nisovin.shopkeepers.util.inventory.InventoryViewUtils;
 import com.nisovin.shopkeepers.util.inventory.ItemUtils;
@@ -194,7 +195,7 @@ public class EquipmentEditorView extends View {
 
 		if (rightClick) {
 			// Clear the equipment slot:
-			Bukkit.getScheduler().runTask(ShopkeepersPlugin.getInstance(), () -> {
+			SchedulerUtils.runTaskOrOmit(ShopkeepersPlugin.getInstance(), view.getPlayer(), () -> {
 				if (!this.isOpen() || this.abortIfContextInvalid()) return;
 
 				inventory.setItem(rawSlot, this.toEditorEquipmentItem(equipmentSlot, null));
@@ -207,7 +208,7 @@ public class EquipmentEditorView extends View {
 		if (leftClick && !ItemUtils.isEmpty(cursorClone)) {
 			assert cursorClone != null;
 			// Place the item from the cursor:
-			Bukkit.getScheduler().runTask(ShopkeepersPlugin.getInstance(), () -> {
+			SchedulerUtils.runTaskOrOmit(ShopkeepersPlugin.getInstance(), view.getPlayer(), () -> {
 				if (!this.isOpen() || this.abortIfContextInvalid()) return;
 
 				cursorClone.setAmount(1);

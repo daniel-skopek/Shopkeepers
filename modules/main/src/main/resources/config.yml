@@ -39,10 +39,6 @@ debug: false
 # - 'shopkeeper-dirty': Logs additional debug output whenever a shopkeeper's
 #    data is marked as 'dirty'.
 debug-options: []
-# Whether to report anonymous usage statistics to https://bStats.org
-# All reported information can be found here:
-# https://bstats.org/plugin/bukkit/Shopkeepers
-enable-metrics: true
 
 # *~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*
 # Messages

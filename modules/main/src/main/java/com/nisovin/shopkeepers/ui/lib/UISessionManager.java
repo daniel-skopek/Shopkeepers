@@ -301,8 +301,11 @@ public final class UISessionManager {
 		// Deactivate currently active UIs for this subject:
 		this.deactivateUIsForContext(contextObject);
 
-		SchedulerUtils.runTaskOrOmit(plugin, () -> {
-			this.abortUISessionsForContext(contextObject);
+		// Aborting (and thereby closing the inventory) has to happen on each player's region:
+		this.getUISessionsForContext(contextObject).forEach(uiSession -> {
+			SchedulerUtils.runTaskOrOmit(plugin, uiSession.getPlayer(), () -> {
+				this.abort(uiSession);
+			});
 		});
 	}
 
@@ -313,8 +316,11 @@ public final class UISessionManager {
 		// Deactivate currently active UIs for this subject:
 		this.deactivateUIsForContext(contextObject, uiType);
 
-		SchedulerUtils.runTaskOrOmit(plugin, () -> {
-			this.abortUISessionsForContext(contextObject, uiType);
+		// Aborting (and thereby closing the inventory) has to happen on each player's region:
+		this.getUISessionsForContext(contextObject, uiType).forEach(uiSession -> {
+			SchedulerUtils.runTaskOrOmit(plugin, uiSession.getPlayer(), () -> {
+				this.abort(uiSession);
+			});
 		});
 	}
 

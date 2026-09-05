@@ -7,6 +7,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -21,7 +22,6 @@ import org.bukkit.event.HandlerList;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
-import org.bukkit.scheduler.BukkitTask;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
 import com.nisovin.shopkeepers.SKShopkeepersPlugin;
@@ -31,6 +31,8 @@ import com.nisovin.shopkeepers.compat.Compat;
 import com.nisovin.shopkeepers.config.Settings;
 import com.nisovin.shopkeepers.util.bukkit.EntityUtils;
 import com.nisovin.shopkeepers.util.bukkit.MutableChunkCoords;
+import com.nisovin.shopkeepers.util.bukkit.ScheduledTask;
+import com.nisovin.shopkeepers.util.bukkit.SchedulerUtils;
 import com.nisovin.shopkeepers.util.bukkit.WorldUtils;
 import com.nisovin.shopkeepers.util.java.CyclicCounter;
 import com.nisovin.shopkeepers.util.java.RateLimiter;
@@ -189,15 +191,15 @@ public class EntityAI implements Listener {
 	// Index for fast removal: Shop object -> EntityData
 	private final Map<BaseEntityShopObject<?>, EntityData> shopObjects = new HashMap<>();
 
-	private @Nullable BukkitTask aiTask = null;
+	private @Nullable ScheduledTask aiTask = null;
 	private boolean currentlyRunning = false;
 
 	// Statistics:
 	private int activeAIChunksCount = 0;
-	private int activeAIEntityCount = 0;
+	private final AtomicInteger activeAIEntityCount = new AtomicInteger();
 
 	private int activeGravityChunksCount = 0;
-	private int activeGravityEntityCount = 0;
+	private final AtomicInteger activeGravityEntityCount = new AtomicInteger();
 
 	private final Timer totalTimings = new Timer();
 	// Note: This only captures the periodic full activation updates, and not the player-specific
@@ -277,10 +279,10 @@ public class EntityAI implements Listener {
 
 		// Update entity statistics:
 		if (chunkData.activeAI) {
-			activeAIEntityCount++;
+			activeAIEntityCount.incrementAndGet();
 		}
 		if (chunkData.activeGravity) {
-			activeGravityEntityCount++;
+			activeGravityEntityCount.incrementAndGet();
 		}
 
 		// Start the AI task, if it isn't already running:
@@ -310,10 +312,10 @@ public class EntityAI implements Listener {
 
 		// Update entity statistics:
 		if (chunkData.activeAI) {
-			activeAIEntityCount--;
+			activeAIEntityCount.decrementAndGet();
 		}
 		if (chunkData.activeGravity) {
-			activeGravityEntityCount--;
+			activeGravityEntityCount.decrementAndGet();
 		}
 	}
 
@@ -326,10 +328,10 @@ public class EntityAI implements Listener {
 
 	private void resetStatistics() {
 		activeAIChunksCount = 0;
-		activeAIEntityCount = 0;
+		activeAIEntityCount.set(0);
 
 		activeGravityChunksCount = 0;
-		activeGravityEntityCount = 0;
+		activeGravityEntityCount.set(0);
 
 		totalTimings.reset();
 		activationTimings.reset();
@@ -346,7 +348,7 @@ public class EntityAI implements Listener {
 	}
 
 	public int getActiveAIEntityCount() {
-		return activeAIEntityCount;
+		return activeAIEntityCount.get();
 	}
 
 	public int getActiveGravityChunksCount() {
@@ -354,7 +356,7 @@ public class EntityAI implements Listener {
 	}
 
 	public int getActiveGravityEntityCount() {
-		return activeGravityEntityCount;
+		return activeGravityEntityCount.get();
 	}
 
 	public Timings getTotalTimings() {
@@ -380,7 +382,7 @@ public class EntityAI implements Listener {
 
 		// Start AI task:
 		int tickPeriod = Settings.entityBehaviorTickPeriod;
-		aiTask = Bukkit.getScheduler().runTaskTimer(
+		aiTask = SchedulerUtils.runTaskTimerOrOmit(
 				plugin,
 				new TickTask(),
 				tickPeriod,
@@ -415,8 +417,6 @@ public class EntityAI implements Listener {
 
 			// Start timings:
 			totalTimings.start();
-			gravityTimings.startPaused();
-			aiTimings.startPaused();
 
 			// Freshly determine active chunks/entities (near players) every AI_ACTIVATION_TICK_RATE
 			// ticks:
@@ -429,8 +429,6 @@ public class EntityAI implements Listener {
 
 			// Stop timings:
 			totalTimings.stop();
-			gravityTimings.stop();
-			aiTimings.stop();
 
 			currentlyRunning = false;
 		}
@@ -493,7 +491,7 @@ public class EntityAI implements Listener {
 
 	private void activateNearbyChunksDelayed(Player player) {
 		if (!player.isOnline()) return; // Player is no longer online
-		Bukkit.getScheduler().runTask(plugin, new ActivateNearbyChunksDelayedTask(player));
+		SchedulerUtils.runTaskOrOmit(plugin, player, new ActivateNearbyChunksDelayedTask(player));
 	}
 
 	private class ActivateNearbyChunksDelayedTask implements Runnable {
@@ -560,8 +558,8 @@ public class EntityAI implements Listener {
 	// ENTITY PROCESSING
 
 	private void processEntities() {
-		activeAIEntityCount = 0;
-		activeGravityEntityCount = 0;
+		activeAIEntityCount.set(0);
+		activeGravityEntityCount.set(0);
 
 		if (activeAIChunksCount == 0 && activeGravityChunksCount == 0) {
 			// There is no need to process any entities if there are no chunks with active AI or
@@ -590,6 +588,19 @@ public class EntityAI implements Listener {
 		// despawns its entity.
 		if (entity == null) return;
 
+		// On Folia, entity operations have to happen on the entity's region:
+		if (SchedulerUtils.isFolia()) {
+			SchedulerUtils.runTaskOrOmit(plugin, entity, () -> this.doProcessEntity(entityData));
+		} else {
+			this.doProcessEntity(entityData);
+		}
+	}
+
+	private void doProcessEntity(EntityData entityData) {
+		assert entityData != null;
+		Entity entity = entityData.shopObject.getEntity();
+		if (entity == null) return;
+
 		// Note: Checking entity.isValid() is relatively heavy (compared to other operations) due to
 		// a chunk lookup. The entity's entry is already immediately getting removed as reaction to
 		// its chunk being unloaded. So there should be no need to check for that here.
@@ -607,20 +618,20 @@ public class EntityAI implements Listener {
 		ChunkData chunkData = entityData.chunkData;
 
 		// Process gravity:
-		gravityTimings.resume();
 		if (chunkData.activeGravity && entityData.isAffectedByGravity()) {
-			activeGravityEntityCount++;
+			activeGravityEntityCount.incrementAndGet();
+			long startNanos = System.nanoTime();
 			this.processGravity(entityData);
+			gravityTimings.addTime(System.nanoTime() - startNanos);
 		}
-		gravityTimings.pause();
 
 		// Process AI:
-		aiTimings.resume();
 		if (chunkData.activeAI) {
-			activeAIEntityCount++;
+			activeAIEntityCount.incrementAndGet();
+			long startNanos = System.nanoTime();
 			this.processAI(entityData);
+			aiTimings.addTime(System.nanoTime() - startNanos);
 		}
-		aiTimings.pause();
 	}
 
 	// GRAVITY
